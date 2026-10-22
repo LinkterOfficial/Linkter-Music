@@ -15,18 +15,13 @@ log = logging.getLogger("linkter-music")
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 ANNOUNCE_CHANNEL_ID = int(os.environ.get("ANNOUNCE_CHANNEL_ID", "0"))
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "UC6LtepCwB5hIf08JYCKewEQ")
-YOUTUBE_CHANNEL_URL = os.getenv(
-    "YOUTUBE_CHANNEL_URL", "https://www.youtube.com/@LinkterOfficial"
-)
+YOUTUBE_CHANNEL_URL = os.getenv("YOUTUBE_CHANNEL_URL", "https://www.youtube.com/@LinkterOfficial")
 SPOTIFY_URL = os.getenv("SPOTIFY_URL", "").strip()
-# Optional: one URL per line. Add specific Spotify tracks/albums/releases here.
 EXTRA_MUSIC_LINKS = [
     line.strip()
     for line in os.getenv("EXTRA_MUSIC_LINKS", "").splitlines()
     if line.strip().startswith(("https://open.spotify.com/", "https://www.youtube.com/"))
 ]
-# Upload titles/descriptions must contain one of these words to auto-announce.
-# Set to empty to announce every upload from the channel.
 KEYWORDS = [
     word.strip().lower()
     for word in os.getenv(
@@ -69,8 +64,9 @@ def make_links_embed() -> discord.Embed:
         ),
         inline=False,
     )
-    if SPOTIFY_URL:
-        embed.add_field(name="Spotify", value=f"[Listen on Spotify]({SPOTIFY_URL})", inline=False)
+    spotify_link = SPOTIFY_URL or "https://open.spotify.com/search/Linkter"
+    spotify_label = "Listen to Linkter on Spotify" if SPOTIFY_URL else "Search Linkter on Spotify"
+    embed.add_field(name="Spotify", value=f"[{spotify_label}]({spotify_link})", inline=False)
     if EXTRA_MUSIC_LINKS:
         embed.add_field(
             name="More music",
@@ -82,9 +78,9 @@ def make_links_embed() -> discord.Embed:
 
 
 async def announce(entry, channel=None):
-    channel = channel or bot.get_channel(ANNOUNCE_CHANNEL_ID)
+    channel = channel or (bot.get_channel(ANNOUNCE_CHANNEL_ID) if ANNOUNCE_CHANNEL_ID else None)
     if channel is None:
-        log.warning("Announcement channel not found; set ANNOUNCE_CHANNEL_ID.")
+        log.warning("Announcement channel not configured/found; set ANNOUNCE_CHANNEL_ID to a Discord channel ID.")
         return
     video_id = entry.get("yt_videoid") or entry.get("id", "").split(":")[-1]
     title = entry.get("title", "New Linkter upload")
@@ -113,10 +109,11 @@ async def check_youtube_uploads():
         if not entries:
             return
 
-        # On first run, remember current uploads without flooding the channel.
+        # First run: remember recent uploads without flooding the channel.
         if last_seen_video_id is None:
             last_seen_video_id = entries[0].get("yt_videoid")
             seen_video_ids.update(e.get("yt_videoid", "") for e in entries)
+            log.info("Initialized YouTube feed; future matching music uploads will be announced.")
             return
 
         new_entries = []
@@ -127,7 +124,6 @@ async def check_youtube_uploads():
             if video_id and video_id not in seen_video_ids:
                 new_entries.append(entry)
 
-        # Announce oldest-first, only when the title/description looks music-related.
         for entry in reversed(new_entries):
             video_id = entry.get("yt_videoid", "")
             seen_video_ids.add(video_id)
@@ -171,7 +167,9 @@ async def publish(interaction: discord.Interaction):
 @app_commands.describe(query="A song title, release, or keyword")
 async def musicsearch(interaction: discord.Interaction, query: str):
     url = "https://www.youtube.com/results?search_query=" + quote(f"Linkter {query}")
-    await interaction.response.send_message(f"[Search YouTube for Linkter: {discord.utils.escape_markdown(query)}]({url})")
+    await interaction.response.send_message(
+        f"[Search YouTube for Linkter: {discord.utils.escape_markdown(query)}]({url})"
+    )
 
 
 @publish.error
